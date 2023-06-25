@@ -74,13 +74,50 @@ app.post('/login',async(req,res)=>{
 
 })
 
-app.post('/products',async(req,res)=>{
-
-    let datas = new product(req.body)
+app.post('/products/:email',async(req,res)=>{
+    
+    const { email } = req.params;
+    const requestBody = req.body;  //email is extracted from req.params and the remaing fields are separated by spread operator
+    const datas = new product({
+        email: email,
+        ...requestBody
+      });
     let data = await datas.save()
     console.log(data)
     res.send(data)
 
+})
+
+app.get('/get-products/:email', async(req, res) => {
+    
+    console.log(req.params.email)
+    let data = await product.find({ email :req.params.email})
+    
+    if (data.length > 0) {
+        res.send(data)
+        console.log(data)
+    } else {
+        res.send('this is invalid user')
+    }
+})
+
+app.put('/update/:_id', async(req, res) => {
+    
+    console.log(req.params._id)
+    let data = await product.updateOne({_id:req.params._id },{ $set:{ email : req.body.email,  Productname:req.body.Productname, Category:req.body.Category, Productbrand:req.body.Productbrand, Price:req.body.Price} })   
+    console.log(data)
+    res.send(data)
+    
+})
+
+app.get('/get-update/:_id',async(req,res)=>{
+
+    console.log(req.params)
+    let data = await product.findOne({_id:req.params._id})
+    if(data)
+    {
+        res.send(data)
+    }else return res.send('err')
 })
 
 

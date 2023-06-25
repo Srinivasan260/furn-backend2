@@ -19,6 +19,10 @@ const Products = new mongoose.Schema({
         required : true
         
     },
+    email:{
+        type:String,
+        required:true
+    }
  
 })
 
