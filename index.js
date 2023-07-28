@@ -2,6 +2,16 @@ const express = require('express')
 const cors = require('cors')
 const jwd = require('jsonwebtoken')
 var cookieParser = require('cookie-parser')
+const nodemailer = require('nodemailer')
+const bcryptotp = require('bcryptjs');
+
+
+
+//for aws
+const multer = require('multer');
+const aws = require('aws-sdk');
+const multerS3 = require('multer-s3');
+const crypto = require('crypto')
 
 require('dotenv').config();
 require('./conn/dbconn')
@@ -11,6 +21,8 @@ const product = require('./conn/product')
 const Problem = require('./conn/help')
 
 const {hashPass,logPas}=require('./conn/hashing')
+
+const Otpverify= require('./conn/otp')
 
 
 
@@ -22,6 +34,70 @@ app.use(cors())
 app.use(cookieParser())
 
 
+
+// creating traansporter
+
+const transporter = nodemailer.createTransport({
+    host: 'smtp.outlook.com',
+    port: 587,
+    secure: false,
+    auth: {
+      user: 'srinivjgnc@gmail.com',
+      pass: 'Srinivasan098@',
+    },
+  })
+
+
+
+//aws config
+//for aws connection we have to specify the access key
+
+
+
+aws.config.update({
+    secretAccessKey: process.env.ACCESS_SECRET,
+    accessKeyId: process.env.ACCESS_KEY,
+    region: process.env.REGION
+  });
+  
+  const Bucket = process.env.BUCKET;
+  
+  const s3 = new aws.S3();
+
+  // const randomBytes = (bytes = 32)=>{
+  //   crypto.randomBytes(bytes).toString('hex')
+  // }
+  
+  // const filename = new randomBytes();
+  const upload = multer({
+    storage: multerS3({
+      
+      bucket: Bucket,
+      s3: s3,
+      key: (req, file, cb) => {
+        cb(null, file.originalname);
+      }
+    })
+  });
+  
+  app.post('/post',upload.any(),async(req, res) => {
+      console.log('3')
+   
+    // console.log(req.params)
+    
+
+    // const command= new PutObjectCommand(upload)
+
+    //   await s3.send(command)
+    res.send(req.file);
+    console.log(req.file);
+   
+
+
+  });
+
+
+
 //  for  signup 
 app.post('/signup',async(req,res)=>{
 
@@ -30,10 +106,19 @@ app.post('/signup',async(req,res)=>{
     req.body.password = hashPassword
     let data = new signup(req.body);
     let data2 =await data.save()
+    console.log(data2)
+
     if(data2){
-        res.send(data2)
+        
+            console.log(data2.email,data2._id)
+        
+        const userverify = await UserOtp(data2.email, data2._id,res)
+        console.log(data2)
+    
+       return  res.send(data2._id);
+   
     }else{
-        return res.send(err)
+        return res.json({ messadge: 'Signup Invalid' })
     }
 
 })
@@ -149,6 +234,106 @@ app.delete('/delete/:_id', async(req,res)=>{
     {
         res.send(data)
     }else return res.send('err')
+})
+
+
+// email verification 
+
+const UserOtp =async(email,_id,res)=>{
+
+try{
+    const Otp = `${Math.floor(1000 + Math.random() * 9000)}`;
+    console.log(Otp)
+
+    const mailDetails ={
+        from : 'srinivjgnc@gmail.com',
+        to : email,
+        Subject: 'SR furn mail id verfication ',
+        html : `<p>Your ${Otp}  for SR Furn app login..Dont share this</p> `
+    }
+    console.log('5')
+
+    const otpdata =  new Otpverify({
+        userId : _id,
+        Otp : Otp,
+        createdAt: Date.now(),
+        expiresAt: Date.now() + 360000,
+
+
+    })
+
+     await otpdata.save()
+
+    transporter.sendMail(mailDetails);
+   
+}catch(err){
+   return  res.json({mesage : err.message})
+}
+}
+
+app.post('/verify-otp', async(req,res)=>{
+
+    try{
+        
+          
+        let {userId,Otp} =req.body
+        
+        console.log(userId ,Otp)
+
+        if(!userId && !Otp){
+            return res.json (' enter the otp and userID')
+
+
+        }else{
+
+            const findOTp = await Otpverify.find({userId})
+            console.log(findOTp)
+           
+
+            if(!findOTp.data <= 0){
+                return res.json ('enter the valid OTp')
+
+            }else{
+                const{expiresAt} = findOTp[0]
+                const hashOtp = findOTp[0].Otp;
+                console.log(expiresAt)
+                  if(expiresAt < Date.now()){
+                    console.log('4')
+                    await Otpverify.deleteOne({userId})
+                    throw new error('your otp is expired')
+                  }
+                else{
+                    console.log('5')
+                    const OtpVerified = bcryptotp.compare(Otp,hashOtp)
+                    console.log(OtpVerified)
+           if(!OtpVerified){
+            throw new error('otp is not valid')
+           }else{
+
+            await signup.updateOne({_id:userId},{verified : 'true'})
+           await Otpverify.deleteMany({userId})
+           res.json({
+            status: "success",
+            message : "User email updated successfully"
+           })
+          }
+
+
+                }
+            }
+        }
+
+    }
+    catch(err){
+        res.json({
+            status :"failed",
+            message : err.message
+          })
+          console.log({mesaage : err.message})
+      
+
+    }
+
 })
 
 
